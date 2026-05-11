@@ -1,6 +1,7 @@
 class TimelinesController < ApplicationController
 
   def index
+
     timestamp =
       Time.parse(
         params[:timestamp]

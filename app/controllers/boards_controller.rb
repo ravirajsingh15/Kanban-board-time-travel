@@ -5,6 +5,6 @@ class BoardsController < ApplicationController
       :column,
       :position
     )
+
   end
-  
 end

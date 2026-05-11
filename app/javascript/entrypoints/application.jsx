@@ -1,15 +1,10 @@
 import React from "react";
+import ReactDOM from "react-dom/client";
 
-import ReactDOM from
-  "react-dom/client";
-
-import Board from
-  "../pages/Board.jsx";
+import Board from "../pages/Board";
 
 ReactDOM.createRoot(
-  document.getElementById(
-    "app"
-  )
+  document.getElementById("app")
 ).render(
   <Board />
 );

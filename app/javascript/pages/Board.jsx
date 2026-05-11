@@ -3,6 +3,12 @@ import React, {
   useEffect,
 } from "react";
 
+import {
+  DragDropContext,
+  Droppable,
+  Draggable,
+} from "@hello-pangea/dnd";
+
 export default function Board() {
 
   const columns = [
@@ -13,58 +19,20 @@ export default function Board() {
     "Done",
   ];
 
-  // CARDS STATE
-
   const [cards, setCards] =
-    useState(() => {
-
-      const savedCards =
-        localStorage.getItem(
-          "cards"
-        );
-
-      return savedCards
-        ? JSON.parse(savedCards)
-        : [
-            {
-              id: 1,
-              title:
-                "Fix Login Bug",
-              description:
-                "Authentication issue",
-              column:
-                "Backlog",
-            },
-
-            {
-              id: 2,
-              title:
-                "Setup CI/CD",
-              description:
-                "Deploy pipeline",
-              column:
-                "To Do",
-            },
-          ];
-    });
-
-  // ACTIVITY STATE
+    useState([]);
 
   const [activities,
     setActivities] =
-      useState(() => {
+      useState([]);
 
-        const saved =
-          localStorage.getItem(
-            "activities"
-          );
+  const [timelineIndex,
+    setTimelineIndex] =
+      useState(null);
 
-        return saved
-          ? JSON.parse(saved)
-          : [];
-      });
-
-  // FORM STATE
+  const [readonly,
+    setReadonly] =
+      useState(false);
 
   const [title, setTitle] =
     useState("");
@@ -74,88 +42,103 @@ export default function Board() {
     setDescription,
   ] = useState("");
 
-  // EDIT STATE
-
   const [editingCardId,
     setEditingCardId] =
       useState(null);
 
-  // SAVE TO LOCAL STORAGE
+  // FETCH INITIAL DATA
 
   useEffect(() => {
 
-    localStorage.setItem(
-      "cards",
-      JSON.stringify(cards)
-    );
+    fetchCards();
+    fetchActivities();
 
-  }, [cards]);
+  }, []);
 
-  useEffect(() => {
+  // FETCH CARDS
 
-    localStorage.setItem(
-      "activities",
-      JSON.stringify(
-        activities
-      )
-    );
+  const fetchCards =
+    async () => {
 
-  }, [activities]);
+      const response =
+        await fetch(
+          "/cards"
+        );
+
+      const data =
+        await response.json();
+
+      setCards(data);
+    };
+
+  // FETCH ACTIVITIES
+
+  const fetchActivities =
+    async () => {
+
+      const response =
+        await fetch(
+          "/events"
+        );
+
+      const data =
+        await response.json();
+
+      setActivities(data);
+    };
 
   // ADD CARD
 
-  const addCard = () => {
+  const addCard =
+    async () => {
 
-    if (!title) return;
+      if (!title)
+        return;
 
-    const newCard = {
-      id: Date.now(),
+      await fetch(
+        "/cards",
+        {
+          method:
+            "POST",
 
-      title,
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
 
-      description,
+          body:
+            JSON.stringify({
+              title,
+              description,
+            }),
+        }
+      );
 
-      column:
-        "Backlog",
+      await fetchCards();
+
+      await fetchActivities();
+
+      setTitle("");
+
+      setDescription("");
     };
-
-    setCards([
-      ...cards,
-      newCard,
-    ]);
-
-    setActivities([
-      `Card "${title}" created`,
-      ...activities,
-    ]);
-
-    setTitle("");
-    setDescription("");
-  };
 
   // DELETE CARD
 
   const deleteCard =
-    (cardId) => {
+    async (id) => {
 
-      const card =
-        cards.find(
-          (c) =>
-            c.id === cardId
-        );
-
-      setCards(
-        cards.filter(
-          (card) =>
-            card.id !==
-            cardId
-        )
+      await fetch(
+        `/cards/${id}`,
+        {
+          method:
+            "DELETE",
+        }
       );
 
-      setActivities([
-        `Card "${card.title}" deleted`,
-        ...activities,
-      ]);
+      await fetchCards();
+
+      await fetchActivities();
     };
 
   // START EDIT
@@ -178,42 +161,155 @@ export default function Board() {
 
   // SAVE EDIT
 
-  const saveEdit = () => {
+  const saveEdit =
+    async () => {
 
-    const updatedCards =
-      cards.map((card) => {
+      const currentCard =
+        cards.find(
+          (card) =>
+            card.id ===
+            editingCardId
+        );
 
-        if (
-          card.id ===
-          editingCardId
-        ) {
+      await fetch(
+        `/cards/${editingCardId}`,
+        {
+          method:
+            "PATCH",
 
-          return {
-            ...card,
-            title,
-            description,
-          };
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+
+          body:
+            JSON.stringify({
+              title,
+              description,
+
+              column:
+                currentCard.column,
+            }),
         }
+      );
 
-        return card;
-      });
+      await fetchCards();
 
-    setCards(
-      updatedCards
-    );
+      await fetchActivities();
 
-    setActivities([
-      `Card "${title}" updated`,
-      ...activities,
-    ]);
+      setEditingCardId(
+        null
+      );
 
-    setEditingCardId(
-      null
-    );
+      setTitle("");
 
-    setTitle("");
-    setDescription("");
-  };
+      setDescription("");
+    };
+
+  // DRAG DROP
+
+  const onDragEnd =
+    async (
+      result
+    ) => {
+
+      if (
+        !result.destination
+      ) return;
+
+      if (readonly)
+        return;
+
+      const {
+        destination,
+      } = result;
+
+      const destinationColumn =
+        destination.droppableId;
+
+      const movedCard =
+        cards.find(
+          (card) =>
+            card.id.toString() ===
+            result.draggableId
+        );
+
+      await fetch(
+        `/cards/${movedCard.id}`,
+        {
+          method:
+            "PATCH",
+
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+
+          body:
+            JSON.stringify({
+              title:
+                movedCard.title,
+
+              description:
+                movedCard.description,
+
+              column:
+                destinationColumn,
+            }),
+        }
+      );
+
+      await fetchCards();
+
+      await fetchActivities();
+    };
+
+  // TIMELINE
+
+  const handleTimeline =
+    async (e) => {
+
+      const index =
+        Number(
+          e.target.value
+        );
+
+      setTimelineIndex(
+        index
+      );
+
+      setReadonly(true);
+
+      const activity =
+        activities[index];
+
+      if (!activity)
+        return;
+
+      const response =
+        await fetch(
+          `/timeline?timestamp=${activity.occurred_at}`
+        );
+
+      const data =
+        await response.json();
+
+      setCards(data);
+    };
+
+  // BACK TO LIVE
+
+  const backToLive =
+    async () => {
+
+      await fetchCards();
+
+      setReadonly(false);
+
+      setTimelineIndex(
+        null
+      );
+    };
 
   return (
     <div
@@ -223,7 +319,7 @@ export default function Board() {
         background:
           "#f3f4f6",
         fontFamily:
-          "Arial, sans-serif",
+          "Arial",
       }}
     >
 
@@ -246,408 +342,646 @@ export default function Board() {
             alignItems:
               "center",
             marginBottom:
-              "30px",
+              "20px",
           }}
         >
 
           <h1
             style={{
-              fontSize: "36px",
+              fontSize:
+                "42px",
+
               fontWeight:
                 "bold",
-              color: "#111827",
+
+              background:
+                "linear-gradient(135deg, #2563eb, #1d4ed8)",
+
+              WebkitBackgroundClip:
+                "text",
+
+              WebkitTextFillColor:
+                "transparent",
+
+              letterSpacing:
+                "1px",
+
+              marginBottom:
+                "10px",
+
+              textShadow:
+                "0 2px 10px rgba(37,99,235,0.15)",
             }}
           >
-            Kanban Board
+            🚀 Kanban Board Time Travel
           </h1>
+
+          {readonly && (
+
+            <div
+              style={{
+                background:
+                  "#2563eb",
+
+                color:
+                  "white",
+
+                padding:
+                  "10px 16px",
+
+                borderRadius:
+                  "10px",
+
+                fontWeight:
+                  "bold",
+              }}
+            >
+              Historical View
+            </div>
+
+          )}
+
+        </div>
+
+        {/* TIMELINE */}
+
+        {activities.length > 0 && (
 
           <div
             style={{
               background:
-                "#111827",
-              color: "white",
+                "white",
+
               padding:
-                "10px 16px",
+                "20px",
+
               borderRadius:
-                "10px",
-              fontWeight:
-                "bold",
+                "16px",
+
+              marginBottom:
+                "20px",
             }}
           >
-            {cards.length}
-            {" "}
-            Cards
+
+            <input
+              type="range"
+
+              min="0"
+
+              max={
+                activities.length -
+                1
+              }
+
+              value={
+                timelineIndex ?? 0
+              }
+
+              onChange={
+                handleTimeline
+              }
+
+              style={{
+                width: "100%",
+              }}
+            />
+
+            <div
+              style={{
+                marginTop:
+                  "12px",
+
+                display:
+                  "flex",
+
+                justifyContent:
+                  "space-between",
+
+                alignItems:
+                  "center",
+              }}
+            >
+
+              <span
+                style={{
+                  color:
+                    "#6b7280",
+
+                  fontSize:
+                    "14px",
+                }}
+              >
+                Timeline:
+                {" "}
+
+                {
+                  activities[
+                    timelineIndex ?? 0
+                  ]?.occurred_at &&
+                  new Date(
+                    activities[
+                      timelineIndex ?? 0
+                    ].occurred_at
+                  ).toLocaleString()
+                }
+
+              </span>
+
+            </div>
+
+            {readonly && (
+
+              <button
+                onClick={
+                  backToLive
+                }
+
+                style={{
+                  marginTop:
+                    "15px",
+
+                  padding:
+                    "10px 20px",
+
+                  background:
+                    "#2563eb",
+
+                  color:
+                    "white",
+
+                  border:
+                    "none",
+
+                  borderRadius:
+                    "8px",
+
+                  cursor:
+                    "pointer",
+                }}
+              >
+                Back To Live
+              </button>
+
+            )}
+
           </div>
 
-        </div>
+        )}
 
         {/* FORM */}
 
-        <div
-          style={{
-            background:
-              "white",
-            padding: "20px",
-            borderRadius:
-              "16px",
-            marginBottom:
-              "30px",
-            boxShadow:
-              "0 2px 10px rgba(0,0,0,0.08)",
-            display: "flex",
-            gap: "12px",
-          }}
-        >
+        {!readonly && (
 
-          <input
-            type="text"
-            placeholder="Card title"
-            value={title}
-            onChange={(e) =>
-              setTitle(
-                e.target.value
-              )
-            }
+          <div
             style={{
-              flex: 1,
-              padding: "12px",
+              background:
+                "white",
+
+              padding:
+                "20px",
+
               borderRadius:
-                "10px",
-              border:
-                "1px solid #d1d5db",
-              outline: "none",
+                "16px",
+
+              marginBottom:
+                "30px",
+
+              display:
+                "flex",
+
+              gap: "10px",
             }}
-          />
+          >
 
-          <input
-            type="text"
-            placeholder="Description"
-            value={description}
-            onChange={(e) =>
-              setDescription(
-                e.target.value
-              )
-            }
-            style={{
-              flex: 1,
-              padding: "12px",
-              borderRadius:
-                "10px",
-              border:
-                "1px solid #d1d5db",
-              outline: "none",
-            }}
-          />
+            <input
+              type="text"
 
-          {editingCardId ? (
+              placeholder="Title"
 
-            <button
-              onClick={
-                saveEdit
+              value={title}
+
+              onChange={(e) =>
+                setTitle(
+                  e.target.value
+                )
               }
+
               style={{
-                background:
-                  "#16a34a",
-                color: "white",
-                border: "none",
+                flex: 1,
                 padding:
-                  "12px 20px",
+                  "12px",
+
+                border:
+                  "1px solid #ddd",
+
                 borderRadius:
-                  "10px",
-                fontWeight:
-                  "bold",
-                cursor:
-                  "pointer",
+                  "8px",
               }}
-            >
-              Save
-            </button>
+            />
 
-          ) : (
+            <input
+              type="text"
 
-            <button
-              onClick={addCard}
+              placeholder="Description"
+
+              value={
+                description
+              }
+
+              onChange={(e) =>
+                setDescription(
+                  e.target.value
+                )
+              }
+
               style={{
-                background:
-                  "#2563eb",
-                color: "white",
-                border: "none",
+                flex: 1,
                 padding:
-                  "12px 20px",
+                  "12px",
+
+                border:
+                  "1px solid #ddd",
+
                 borderRadius:
-                  "10px",
-                fontWeight:
-                  "bold",
-                cursor:
-                  "pointer",
+                  "8px",
               }}
-            >
-              + Add Card
-            </button>
+            />
 
-          )}
+            {editingCardId ? (
 
-        </div>
-
-        {/* BOARD */}
-
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns:
-              "repeat(5, 1fr)",
-            gap: "20px",
-          }}
-        >
-
-          {columns.map(
-            (column) => (
-
-              <div
-                key={column}
+              <button
+                onClick={
+                  saveEdit
+                }
 
                 style={{
                   background:
+                    "#16a34a",
+
+                  color:
                     "white",
 
+                  border:
+                    "none",
+
+                  padding:
+                    "12px 20px",
+
                   borderRadius:
-                    "16px",
+                    "10px",
 
-                  padding: "16px",
-
-                  minHeight:
-                    "500px",
-
-                  boxShadow:
-                    "0 2px 10px rgba(0,0,0,0.08)",
+                  cursor:
+                    "pointer",
                 }}
               >
+                Save
+              </button>
 
-                {/* COLUMN HEADER */}
+            ) : (
 
-                <div
-                  style={{
-                    display:
-                      "flex",
+              <button
+                onClick={
+                  addCard
+                }
 
-                    justifyContent:
-                      "space-between",
+                style={{
+                  background:
+                    "#2563eb",
 
-                    alignItems:
-                      "center",
+                  color:
+                    "white",
 
-                    marginBottom:
-                      "20px",
-                  }}
+                  border:
+                    "none",
+
+                  padding:
+                    "12px 20px",
+
+                  borderRadius:
+                    "10px",
+
+                  cursor:
+                    "pointer",
+                }}
+              >
+                Add Card
+              </button>
+
+            )}
+
+          </div>
+
+        )}
+
+        {/* BOARD */}
+
+        <DragDropContext
+          onDragEnd={
+            onDragEnd
+          }
+        >
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns:
+                "repeat(5, 1fr)",
+
+              gap: "20px",
+            }}
+          >
+
+            {columns.map(
+              (column) => (
+
+                <Droppable
+                  droppableId={
+                    column
+                  }
+
+                  key={column}
                 >
 
-                  <h2
-                    style={{
-                      fontSize:
-                        "20px",
+                  {(provided) => (
 
-                      fontWeight:
-                        "bold",
+                    <div
+                      ref={
+                        provided.innerRef
+                      }
 
-                      color:
-                        "#111827",
-                    }}
-                  >
-                    {column}
-                  </h2>
+                      {...provided.droppableProps}
 
-                  <span
-                    style={{
-                      background:
-                        "#e5e7eb",
+                      style={{
+                        background:
+                          "white",
 
-                      padding:
-                        "4px 10px",
+                        borderRadius:
+                          "16px",
 
-                      borderRadius:
-                        "999px",
+                        padding:
+                          "15px",
 
-                      fontSize:
-                        "12px",
+                        minHeight:
+                          "500px",
+                      }}
+                    >
 
-                      fontWeight:
-                        "bold",
-                    }}
-                  >
-                    {
-                      cards.filter(
-                        (
-                          card
-                        ) =>
-                          card.column ===
-                          column
-                      ).length
-                    }
-                  </span>
-
-                </div>
-
-                {/* CARDS */}
-
-                {cards
-                  .filter(
-                    (card) =>
-                      card.column ===
-                      column
-                  )
-                  .map(
-                    (card) => (
-
-                      <div
-                        key={
-                          card.id
-                        }
-
+                      <h2
                         style={{
+                          marginBottom:
+                            "18px",
+
                           background:
-                            "#f9fafb",
+                            "linear-gradient(135deg, #2563eb, #1d4ed8)",
 
-                          border:
-                            "1px solid #e5e7eb",
+                          color:
+                            "white",
 
-                          borderRadius:
-                            "14px",
+                          display:
+                            "flex",
+
+                          justifyContent:
+                            "space-between",
+
+                          alignItems:
+                            "center",
 
                           padding:
-                            "14px",
+                            "12px 16px",
 
-                          marginBottom:
-                            "14px",
+                          borderRadius:
+                            "12px",
+
+                          fontSize:
+                            "18px",
+
+                          fontWeight:
+                            "bold",
+
+                          boxShadow:
+                            "0 4px 10px rgba(37,99,235,0.25)",
                         }}
                       >
 
-                        <h3
-                          style={{
-                            fontWeight:
-                              "bold",
+                      <span>
+                        {column}
+                      </span>
 
-                            marginBottom:
-                              "8px",
+                      <span
+                        style={{
+                          background:
+                            "rgba(255,255,255,0.2)",
 
-                            color:
-                              "#111827",
-                          }}
-                        >
-                          {
-                            card.title
-                          }
-                        </h3>
+                          padding:
+                            "4px 10px",
 
-                        <p
-                          style={{
-                            color:
-                              "#6b7280",
+                          borderRadius:
+                            "999px",
 
-                            fontSize:
-                              "14px",
+                          fontSize:
+                            "13px",
+                        }}
+                      >
+                        {
+                          cards.filter(
+                            (card) =>
+                              card.column ===
+                              column
+                          ).length
+                        }
+                      </span>
 
-                            marginBottom:
-                              "14px",
-                          }}
-                        >
-                          {
-                            card.description
-                          }
-                        </p>
+                    </h2>
 
-                        <div
-                          style={{
-                            display:
-                              "flex",
-                            gap: "10px",
-                          }}
-                        >
+                      {cards
+                        .filter(
+                          (
+                            card
+                          ) =>
+                            card.column ===
+                            column
+                        )
+                        .map(
+                          (
+                            card,
+                            index
+                          ) => (
 
-                          <button
-                            onClick={() =>
-                              startEdit(
-                                card
-                              )
-                            }
-
-                            style={{
-                              background:
-                                "#2563eb",
-
-                              color:
-                                "white",
-
-                              border:
-                                "none",
-
-                              padding:
-                                "8px 12px",
-
-                              borderRadius:
-                                "8px",
-
-                              cursor:
-                                "pointer",
-
-                              fontSize:
-                                "13px",
-
-                              fontWeight:
-                                "bold",
-                            }}
-                          >
-                            Edit
-                          </button>
-
-                          <button
-                            onClick={() =>
-                              deleteCard(
+                            <Draggable
+                              key={
                                 card.id
-                              )
-                            }
+                              }
 
-                            style={{
-                              background:
-                                "#ef4444",
+                              draggableId={
+                                card.id.toString()
+                              }
 
-                              color:
-                                "white",
+                              index={
+                                index
+                              }
+                            >
 
-                              border:
-                                "none",
+                              {(
+                                provided
+                              ) => (
 
-                              padding:
-                                "8px 12px",
+                                <div
+                                  ref={
+                                    provided.innerRef
+                                  }
 
-                              borderRadius:
-                                "8px",
+                                  {...provided.draggableProps}
 
-                              cursor:
-                                "pointer",
+                                  {...provided.dragHandleProps}
 
-                              fontSize:
-                                "13px",
+                                  style={{
+                                    background:
+                                      "#f9fafb",
 
-                              fontWeight:
-                                "bold",
-                            }}
-                          >
-                            Delete
-                          </button>
+                                    padding:
+                                      "14px",
 
-                        </div>
+                                    borderRadius:
+                                      "10px",
 
-                      </div>
+                                    marginBottom:
+                                      "12px",
 
-                    )
+                                    border:
+                                      "1px solid #eee",
+
+                                    ...provided
+                                      .draggableProps
+                                      .style,
+                                  }}
+                                >
+
+                                  <h3
+                                    style={{
+                                      marginBottom:
+                                        "8px",
+                                    }}
+                                  >
+                                    {
+                                      card.title
+                                    }
+                                  </h3>
+
+                                  <p
+                                    style={{
+                                      color:
+                                        "#6b7280",
+                                    }}
+                                  >
+                                    {
+                                      card.description
+                                    }
+                                  </p>
+
+                                  {!readonly && (
+
+                                    <div
+                                      style={{
+                                        display:
+                                          "flex",
+
+                                        gap:
+                                          "10px",
+
+                                        marginTop:
+                                          "14px",
+                                      }}
+                                    >
+
+                                      <button
+                                        onClick={() =>
+                                          startEdit(
+                                            card
+                                          )
+                                        }
+
+                                        style={{
+                                          background:
+                                            "#2563eb",
+
+                                          color:
+                                            "white",
+
+                                          border:
+                                            "none",
+
+                                          padding:
+                                            "8px 12px",
+
+                                          borderRadius:
+                                            "8px",
+
+                                          cursor:
+                                            "pointer",
+                                        }}
+                                      >
+                                        Edit
+                                      </button>
+
+                                      <button
+                                        onClick={() =>
+                                          deleteCard(
+                                            card.id
+                                          )
+                                        }
+
+                                        style={{
+                                          background:
+                                            "#ef4444",
+
+                                          color:
+                                            "white",
+
+                                          border:
+                                            "none",
+
+                                          padding:
+                                            "8px 12px",
+
+                                          borderRadius:
+                                            "8px",
+
+                                          cursor:
+                                            "pointer",
+                                        }}
+                                      >
+                                        Delete
+                                      </button>
+
+                                    </div>
+
+                                  )}
+
+                                </div>
+
+                              )}
+
+                            </Draggable>
+
+                          )
+                        )}
+
+                      {
+                        provided.placeholder
+                      }
+
+                    </div>
+
                   )}
 
-              </div>
+                </Droppable>
 
-            )
-          )}
+              )
+            )}
 
-        </div>
+          </div>
+
+        </DragDropContext>
 
       </div>
 
@@ -656,41 +990,49 @@ export default function Board() {
       <div
         style={{
           width: "340px",
-          background: "white",
-          padding: "24px",
+
+          background:
+            "white",
+
+          padding:
+            "24px",
+
           borderLeft:
-            "1px solid #e5e7eb",
-          boxShadow:
-            "-2px 0 10px rgba(0,0,0,0.05)",
+            "1px solid #ddd",
         }}
       >
 
-        <h2
+        <div
           style={{
-            fontSize: "24px",
+            background:
+              "#2563eb",
+
+            display:
+              "flex",
+
+            justifyContent:
+              "center",
+
+            alignItems:
+              "center",
+
+            color:
+              "white",
+
+            padding:
+              "10px 16px",
+
+            borderRadius:
+              "10px",
+
             fontWeight:
               "bold",
             marginBottom:
-              "20px",
-            color: "#111827",
+              "10px"
           }}
         >
-          Activity Log
-        </h2>
-
-        {activities.length ===
-          0 && (
-
-          <p
-            style={{
-              color:
-                "#6b7280",
-            }}
-          >
-            No activity yet
-          </p>
-
-        )}
+         Activity Logs
+        </div>
 
         {activities.map(
           (
@@ -708,30 +1050,60 @@ export default function Board() {
                 padding:
                   "14px",
 
-                borderRadius:
-                  "12px",
-
                 marginBottom:
                   "12px",
 
+                borderRadius:
+                  "10px",
+
                 border:
-                  "1px solid #e5e7eb",
+                  "1px solid #eee",
               }}
             >
 
-              <p
-                style={{
-                  color:
-                    "#374151",
+              <p>
 
-                  fontSize:
-                    "14px",
+                {activity.event_type ===
+                  "moved" ? (
 
-                  lineHeight:
-                    "1.5",
-                }}
-              >
-                {activity}
+                  <>
+                    Card "
+                    {
+                      activity.data
+                        ?.title
+                    }"
+                    {" "}
+                    moved from
+                    {" "}
+                    {
+                      activity.data
+                        ?.from_column
+                    }
+                    {" "}
+                    to
+                    {" "}
+                    {
+                      activity.data
+                        ?.to_column
+                    }
+                  </>
+
+                ) : (
+
+                  <>
+                    Card "
+                    {
+                      activity.data
+                        ?.title
+                    }"
+                    {" "}
+                    {
+                      activity.event_type
+                    }
+                  </>
+
+                )}
+
               </p>
 
             </div>

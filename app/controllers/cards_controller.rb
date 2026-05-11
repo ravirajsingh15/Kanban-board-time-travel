@@ -22,11 +22,11 @@ class CardsController < ApplicationController
         params[:description],
 
       column:
-        params[:column],
+        "Backlog",
 
       position:
         next_position(
-          params[:column]
+          "Backlog"
         )
     )
 
@@ -56,7 +56,8 @@ class CardsController < ApplicationController
         params[:description],
 
       column:
-        params[:column]
+        params[:column] ||
+        card.column
     )
 
     if old_column !=
@@ -66,10 +67,10 @@ class CardsController < ApplicationController
         "moved",
         card,
         {
-          from:
+          from_column:
             old_column,
 
-          to:
+          to_column:
             card.column
         }
       )
